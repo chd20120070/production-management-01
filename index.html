@@ -6,6 +6,7 @@
     <title>생산 공정 관리 시스템 (실시간 동기화)</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
+        /* 사용자님의 기존 디자인 100% 유지 */
         body { font-family: 'Malgun Gothic', sans-serif; background-color: #f0f2f5; margin: 0; padding: 20px; }
         .container { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); min-width: 1200px; }
         .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
@@ -35,14 +36,14 @@
         #modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 100; }
         .modal-content { background: white; width: 600px; margin: 100px auto; padding: 20px; border-radius: 10px; position: relative; }
         .paste-box { width: 100%; height: 200px; border: 2px dashed #bdc3c7; border-radius: 8px; padding: 10px; margin-top: 10px; resize: none; box-sizing: border-box; }
-        .sync-notice { font-size: 12px; color: #2ecc71; margin-left: 15px; font-weight: normal; }
+        .sync-notice { font-size: 12px; margin-left: 15px; font-weight: normal; }
     </style>
 </head>
 <body>
 
 <div class="container">
     <div class="header-row">
-        <h2>🚀 생산 공정 관리 시스템 <span id="syncStatus" class="sync-notice">서버 연결 중...</span></h2>
+        <h2>🚀 생산 공정 관리 시스템 <span id="syncStatus" class="sync-notice" style="color: #f39c12;">서버 연결 중...</span></h2>
         <button class="btn-add" onclick="openModal()">+ 데이터 붙여넣기</button>
     </div>
 
@@ -75,9 +76,9 @@
 </div>
 
 <script>
-    // --- 1. Supabase 설정 (사용자님의 정보 자동 삽입됨) ---
-    const SUPABASE_URL = 'https://zlyhwihpwhlygqlyzsqn.supabase.co';
-    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpseWh3aWhwd2hseWdxbHl6c3FuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQxMDM0NTksImV4cCI6MjA1OTY3OTQ1OX0.i_6fLqf_vC8F0vE_i_6fLqf_vC8F0vE_i_6fLqf_vC8F0vE'; // 키가 너무 길어 중략될 수 있으니 꼭 본인 것으로 재확인하세요!
+    // --- 1. 사용자님의 실제 주소와 방금 찾은 진짜 Key 적용 ---
+    const SUPABASE_URL = 'https://gegxfkpoqfrpkqmgljde.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_r2mejtYg_SlSbbdZGsWBKQ_Q0KYbqvm'; 
     const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
     let dataStorage = { all: [], done: [], fail: [], wait: [] };
@@ -90,7 +91,9 @@
         document.getElementById('syncStatus').innerText = "🔄 동기화 중...";
         const { data, error } = await _supabase.from('orders').select('*');
         if (error) {
-            document.getElementById('syncStatus').innerText = "❌ 연결 실패";
+            console.error(error);
+            document.getElementById('syncStatus').innerText = "❌ 연결 실패 (RLS 확인 필요)";
+            document.getElementById('syncStatus').style.color = "#e74c3c";
         } else {
             dataStorage = { all: [], done: [], fail: [], wait: [] };
             data.forEach(item => {
@@ -98,22 +101,26 @@
                 if (dataStorage[tab]) dataStorage[tab].push(item);
             });
             render();
-            document.getElementById('syncStatus').innerText = "✅ 실시간 동기화 완료";
+            document.getElementById('syncStatus').innerText = "✅ 서버 실시간 동기화 완료";
+            document.getElementById('syncStatus').style.color = "#2ecc71";
         }
     }
 
     async function saveToServer() {
-        document.getElementById('syncStatus').innerText = "💾 저장 중...";
+        document.getElementById('syncStatus').innerText = "💾 서버 저장 중...";
         await _supabase.from('orders').delete().neq('id', -1);
         const allItems = [];
         ['all', 'done', 'fail', 'wait'].forEach(tab => {
             dataStorage[tab].forEach(item => {
                 const itemToSave = { ...item, status: tab };
-                delete itemToSave.id;
+                delete itemToSave.id; delete itemToSave.created_at;
                 allItems.push(itemToSave);
             });
         });
-        if (allItems.length > 0) await _supabase.from('orders').insert(allItems);
+        if (allItems.length > 0) {
+            const { error } = await _supabase.from('orders').insert(allItems);
+            if (error) alert("서버 저장 실패! 테이블 컬럼 이름을 확인하세요.");
+        }
         fetchDataFromServer();
     }
 
@@ -159,6 +166,7 @@
 
     function clearAllData() { if(confirm('초기화하시겠습니까?')) { dataStorage = { all: [], done: [], fail: [], wait: [] }; saveToServer(); } }
     function changeTab(tabKey) { currentTab = tabKey; render(); }
+
     function renderButtons() {
         const btnRow = document.getElementById('actionButtons');
         let html = '';
