@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>생산 공정 관리 시스템 (기록 저장형)</title>
+    <title>생산 공정 관리 시스템 (검색 기능 추가)</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
@@ -17,10 +17,15 @@
         .btn-upload { background-color: #3498db; }
         .btn-done { background-color: #27ae60; }
         .btn-fail { background-color: #e74c3c; }
-        .btn-record { background-color: #2c3e50; } /* 기록용 어두운 색상 */
+        .btn-record { background-color: #2c3e50; }
         .btn-return { background-color: #8e44ad; }
         .btn-sel-del { background-color: #e67e22; }
         .btn-clear { background-color: #95a5a6; }
+
+        /* 검색 바 스타일 */
+        .search-row { display: none; margin-bottom: 15px; background: #ecf0f1; padding: 15px; border-radius: 8px; gap: 10px; align-items: center; }
+        .search-row.active { display: flex; }
+        .search-input { padding: 8px 12px; border: 1px solid #bdc3c7; border-radius: 4px; width: 250px; font-size: 13px; }
 
         .tab-menu { display: flex; border-bottom: 2px solid #dee2e6; }
         .tab-item { padding: 12px 25px; cursor: pointer; color: #7f8c8d; border: 1px solid transparent; }
@@ -37,7 +42,7 @@
         .col-seq { width: 60px; }
         .col-product { width: 350px; text-align: left; }
         .col-qty { width: 80px; }
-        .col-date { width: 100px; color: #2980b9; font-weight: bold; } /* 날짜 열 스타일 */
+        .col-date { width: 100px; color: #2980b9; font-weight: bold; }
 
         #fileInput { display: none; }
         .sync-notice { font-size: 12px; margin-left: 15px; }
@@ -56,6 +61,12 @@
 
     <div class="btn-row" id="actionButtons"></div>
 
+    <div id="searchArea" class="search-row">
+        <strong>🔍 기록 검색:</strong>
+        <input type="text" id="searchKeyword" class="search-input" placeholder="PONO 또는 완료일자(2026-03-28) 입력" onkeyup="render()">
+        <span style="font-size: 12px; color: #7f8c8d;">* 실시간 검색됩니다.</span>
+    </div>
+
     <div class="tab-menu">
         <div class="tab-item active" id="tab-all" onclick="changeTab('all')">⚙️ 공정 진행 (<span id="cnt-all">0</span>)</div>
         <div class="tab-item" id="tab-done" onclick="changeTab('done')">✅ 완료 (<span id="cnt-done">0</span>)</div>
@@ -67,7 +78,7 @@
         <table>
             <thead>
                 <tr>
-                    <th class="col-check"><input type="checkbox" onclick="toggleAll(this)"></th>
+                    <th class="col-check"><input type="checkbox" id="mainCheckbox" onclick="toggleAll(this)"></th>
                     <th class="col-pono">PONO</th>
                     <th class="col-client">주문거래처</th>
                     <th class="col-seq">순번</th>
@@ -128,7 +139,7 @@
                     순번: String(row[2] || ''),
                     품명: String(row[3] || ''),
                     수량: String(row[4] || '').replace(/[^0-9.]/g, ''),
-                    complete_date: '' // 초기엔 비어있음
+                    complete_date: ''
                 });
             });
             if (newItems.length > 0) {
@@ -155,27 +166,35 @@
     }
 
     function toggleAll(src) { document.querySelectorAll('.row-check').forEach(cb => cb.checked = src.checked); }
-    function changeTab(t) { currentTab = t; render(); }
 
-    // [핵심 변경] 이동 시 날짜 기록 로직 추가
+    // [개선] 탭 변경 시 전체 체크 해제 및 검색창 제어
+    function changeTab(t) { 
+        currentTab = t;
+        document.getElementById('mainCheckbox').checked = false; // 탭 이동 시 체크박스 초기화
+        document.getElementById('searchKeyword').value = '';     // 검색어 초기화
+        
+        // '생산완료 기록' 탭에서만 검색창 보이기
+        const searchArea = document.getElementById('searchArea');
+        if (t === 'wait') {
+            searchArea.classList.add('active');
+        } else {
+            searchArea.classList.remove('active');
+        }
+        
+        render(); 
+    }
+
     function moveSelected(tKey) {
         const cbs = document.querySelectorAll('.row-check:checked');
         if (cbs.length === 0) return alert('선택된 항목이 없습니다.');
         
-        const today = new Date().toISOString().split('T')[0]; // 오늘 날짜 (YYYY-MM-DD)
-        const idxs = Array.from(cbs).map(cb => parseInt(cb.dataset.idx)).sort((a,b)=>b-a);
+        const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\. /g, '-').replace(/\./, '');
         
-        idxs.forEach(i => {
+        const indices = Array.from(cbs).map(cb => parseInt(cb.dataset.realIdx)).sort((a,b)=>b-a);
+        
+        indices.forEach(i => {
             let item = dataStorage[currentTab][i];
-            
-            // '생산완료 기록' 탭으로 보낼 때만 날짜를 찍음
-            if (tKey === 'wait') {
-                item.complete_date = today;
-            } else if (tKey === 'all' || tKey === 'done') {
-                // 다시 공정으로 돌아오면 날짜를 지울 수도 있음 (선택 사항)
-                // item.complete_date = ''; 
-            }
-            
+            if (tKey === 'wait') item.complete_date = today;
             dataStorage[tKey].push(item);
             dataStorage[currentTab].splice(i, 1);
         });
@@ -186,8 +205,8 @@
         const cbs = document.querySelectorAll('.row-check:checked');
         if (cbs.length === 0) return;
         if(confirm('삭제하시겠습니까?')) {
-            const idxs = Array.from(cbs).map(cb => parseInt(cb.dataset.idx)).sort((a,b)=>b-a);
-            idxs.forEach(i => dataStorage[currentTab].splice(i, 1));
+            const indices = Array.from(cbs).map(cb => parseInt(cb.dataset.realIdx)).sort((a,b)=>b-a);
+            indices.forEach(i => dataStorage[currentTab].splice(i, 1));
             saveToServer();
         }
     }
@@ -206,15 +225,28 @@
             <button class="btn-clear" onclick="clearAll()">전체 초기화</button>
         `;
 
-        const list = dataStorage[currentTab] || [];
+        const keyword = document.getElementById('searchKeyword').value.toLowerCase();
+        let list = dataStorage[currentTab] || [];
+
+        // [추가] 기록 탭 전용 검색 필터링
+        if (currentTab === 'wait' && keyword) {
+            list = list.filter(item => 
+                (item.PONO && item.PONO.toLowerCase().includes(keyword)) || 
+                (item.complete_date && item.complete_date.includes(keyword))
+            );
+        }
+
         document.querySelectorAll('.tab-item').forEach(el => el.classList.toggle('active', el.id==='tab-'+currentTab));
         ['all','done','fail','wait'].forEach(t => document.getElementById('cnt-'+t).innerText = dataStorage[t].length);
 
         const tbody = document.getElementById('tbody');
         tbody.innerHTML = list.length === 0 ? '<tr><td colspan="7" style="padding:40px;">데이터가 없습니다.</td></tr>' :
-            list.map((item, idx) => `
+            list.map((item, idx) => {
+                // 원래 데이터의 인덱스를 찾아야 이동/삭제가 정확히 됨
+                const realIdx = dataStorage[currentTab].indexOf(item);
+                return `
                 <tr>
-                    <td class="col-check"><input type="checkbox" class="row-check" data-idx="${idx}"></td>
+                    <td class="col-check"><input type="checkbox" class="row-check" data-real-idx="${realIdx}"></td>
                     <td class="col-pono">${item.PONO || ''}</td>
                     <td class="col-client">${item.주문거래처 || ''}</td>
                     <td class="col-seq">${item.순번 || ''}</td>
@@ -222,7 +254,7 @@
                     <td class="col-qty">${item.수량 || ''}</td>
                     <td class="col-date">${item.complete_date || '-'}</td>
                 </tr>
-            `).join('');
+            `}).join('');
     }
 </script>
 </body>
