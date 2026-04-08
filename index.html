@@ -2,100 +2,202 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>공정 관리 시스템 (실시간 공유)</title>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <title>생산 공정 관리 시스템 (데이터 정밀 정렬)</title>
     <style>
-        /* 기존 디자인 유지 */
-        body { font-family: sans-serif; padding: 20px; background-color: #f4f7f6; }
-        .container { max-width: 1000px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        textarea { width: 100%; height: 100px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 5px; padding: 10px; }
-        button { background-color: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold; }
-        button:hover { background-color: #0056b3; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
-        th { background-color: #f8f9fa; }
-        .status-sync { color: green; font-size: 0.8em; margin-bottom: 10px; }
+        body { font-family: 'Malgun Gothic', sans-serif; background-color: #f0f2f5; margin: 0; padding: 20px; }
+        .container { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); min-width: 1200px; }
+        
+        .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .btn-row { display: flex; gap: 8px; width: 100%; align-items: center; min-height: 40px; }
+        .spacer { margin-left: auto; }
+        
+        button { padding: 10px 16px; border: none; border-radius: 6px; color: white; cursor: pointer; font-weight: bold; transition: 0.2s; font-size: 13px; }
+        .btn-add { background-color: #3498db; }
+        .btn-apply { background-color: #2ecc71; margin-left: 10px; }
+        .btn-done { background-color: #27ae60; }
+        .btn-fail { background-color: #e74c3c; }
+        .btn-wait { background-color: #f39c12; }
+        .btn-return { background-color: #8e44ad; }
+        .btn-sel-del { background-color: #e67e22; }
+        .btn-clear { background-color: #95a5a6; }
+        .btn-close { background-color: #636e72; }
+
+        .tab-menu { display: flex; border-bottom: 2px solid #dee2e6; margin-top: 15px; }
+        .tab-item { padding: 12px 25px; cursor: pointer; border: 1px solid transparent; color: #7f8c8d; }
+        .tab-item.active { border: 1px solid #dee2e6; border-bottom: 2px solid white; background: white; color: #3498db; font-weight: bold; border-radius: 8px 8px 0 0; }
+        .count { font-weight: bold; color: #3498db; font-size: 0.9em; }
+
+        .table-container { width: 100%; overflow-x: auto; border: 1px solid #ccc; max-height: 650px; background: white; }
+        table { width: 100%; border-collapse: collapse; font-size: 11px; border-left: 1px solid #ccc; border-right: 1px solid #ccc; }
+        
+        th { background-color: #34495e; color: white; padding: 10px; position: sticky; top: 0; z-index: 5; white-space: nowrap; border: 1px solid #455a64; }
+        td { padding: 8px; border: 1px solid #ddd; text-align: center; white-space: nowrap; }
+        
+        tbody tr:nth-child(even) { background-color: #fcfcfc; }
+        tbody tr:hover { background-color: #f1f7ff; }
+        
+        .col-product { text-align: left !important; max-width: 350px; overflow: hidden; text-overflow: ellipsis; padding-left: 15px; }
+
+        #modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 100; }
+        .modal-content { background: white; width: 600px; margin: 100px auto; padding: 20px; border-radius: 10px; position: relative; }
+        .paste-box { width: 100%; height: 200px; border: 2px dashed #bdc3c7; border-radius: 8px; padding: 10px; margin-top: 10px; resize: none; box-sizing: border-box; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>🚀 공정 관리 시스템 (실시간 동기화)</h2>
-    <div id="syncStatus" class="status-sync">서버 연결 중...</div>
-    
-    <textarea id="excelInput" placeholder="엑셀 데이터를 여기에 붙여넣으세요..."></textarea>
-    <button onclick="saveData()">서버에 데이터 저장 (전체 공유)</button>
+    <div class="header-row">
+        <h2>🚀 생산 공정 관리 시스템</h2>
+        <button class="btn-add" onclick="openModal()">+ 데이터 붙여넣기</button>
+    </div>
 
-    <table id="dataTable">
-        <thead>
-            <tr id="tableHeader"></tr>
-        </thead>
-        <tbody id="tableBody"></tbody>
-    </table>
+    <div class="btn-row" id="actionButtons"></div>
+
+    <div class="tab-menu">
+        <div class="tab-item active" id="tab-all" onclick="changeTab('all')">⚙️ 공정 진행 (<span id="cnt-all" class="count">0</span>)</div>
+        <div class="tab-item" id="tab-done" onclick="changeTab('done')">✅ 완료 (<span id="cnt-done" class="count">0</span>)</div>
+        <div class="tab-item" id="tab-fail" onclick="changeTab('fail')">❌ 불가 (<span id="cnt-fail" class="count">0</span>)</div>
+        <div class="tab-item" id="tab-wait" onclick="changeTab('wait')">⏳ 대기 (<span id="cnt-wait" class="count">0</span>)</div>
+    </div>
+
+    <div class="table-container">
+        <table>
+            <thead id="theader"></thead>
+            <tbody id="tbody"></tbody>
+        </table>
+    </div>
+</div>
+
+<div id="modal">
+    <div class="modal-content">
+        <h3>📋 데이터 붙여넣기</h3>
+        <textarea id="inputArea" class="paste-box" placeholder="엑셀 데이터를 붙여넣으세요..."></textarea>
+        <div style="text-align: right; margin-top: 15px;">
+            <button class="btn-close" onclick="closeModal()">취소</button>
+            <button class="btn-apply" onclick="applyPastedData()">적용하기</button>
+        </div>
+    </div>
 </div>
 
 <script>
-    // 1. Supabase 설정 (여기에 복사한 값을 넣어주세요)
-    const SUPABASE_URL = '여기에_URL_복사';
-    const SUPABASE_KEY = '여기에_KEY_복사';
-    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    let dataStorage = JSON.parse(localStorage.getItem('productionData')) || { all: [], done: [], fail: [], wait: [] };
+    let currentTab = 'all';
+    const fixedHeaders = ["PONO", "주문거래처", "순번", "품명", "수량", "납기", "주문일", "확정일", "도면접수", "성적서", "구매 사급 가공품목", "구매 사급 가공 입고일정", "머시닝계획", "센서조립계획", "기타 진행상황"];
 
-    // 2. 페이지 로드 시 데이터 불러오기
-    async function loadData() {
-        document.getElementById('syncStatus').innerText = "데이터 불러오는 중...";
-        
-        const { data, error } = await supabase
-            .from('orders')
-            .select('*');
+    render();
 
-        if (error) {
-            console.error(error);
-            document.getElementById('syncStatus').innerText = "연결 오류!";
-        } else {
-            renderTable(data);
-            document.getElementById('syncStatus').innerText = "● 실시간 서버 동기화 완료";
-        }
+    function openModal() { 
+        document.getElementById('inputArea').value = '';
+        document.getElementById('modal').style.display = 'block'; 
     }
+    function closeModal() { document.getElementById('modal').style.display = 'none'; }
 
-    // 3. 데이터 저장 (엑셀 붙여넣기 시)
-    async function saveData() {
-        const input = document.getElementById('excelInput').value;
-        if (!input) return;
+    function applyPastedData() {
+        const rawText = document.getElementById('inputArea').value;
+        if (!rawText.trim()) return alert('데이터를 입력해주세요.');
 
-        const rows = input.split('\n').map(row => row.split('\t'));
-        const headers = rows[0];
-        const items = rows.slice(1).map(row => {
-            let obj = {};
-            headers.forEach((h, i) => obj[h.trim()] = row[i]?.trim());
-            return obj;
+        // 1. 엑셀의 줄바꿈(Alt+Enter) 문제 해결: "로 감싸진 텍스트 내부의 줄바꿈을 임시 변환
+        let cleanText = rawText.replace(/"([^"]*)"/g, (match, p1) => p1.replace(/\n/g, " "));
+
+        const rows = cleanText.split(/\r?\n/).filter(r => r.trim() !== "");
+        const newItems = [];
+
+        rows.forEach(row => {
+            // 탭으로 분리하되, 각 셀의 내부 줄바꿈 및 불필요한 따옴표 제거
+            const cells = row.split('\t').map(c => c.replace(/\r?\n/g, " ").replace(/"/g, "").trim());
+            
+            // PONO가 아예 비어있는 줄은 유효하지 않은 데이터로 간주 (밀림 방지)
+            if (!cells[0] && !cells[1]) return;
+            if (cells[0].includes("PONO")) return;
+
+            let item = {};
+            fixedHeaders.forEach((h, i) => {
+                item[h] = cells[i] || ''; // 칸이 부족하면 빈값으로 채움
+            });
+            newItems.push(item);
         });
 
-        // 기존 데이터 삭제 후 새 데이터 삽입 (간단한 동기화 방식)
-        const { error: delError } = await supabase.from('orders').delete().neq('id', 0);
-        const { error: insError } = await supabase.from('orders').insert(items);
-
-        if (!insError) {
-            alert("서버에 저장이 완료되었습니다! 모든 기기에서 확인 가능합니다.");
-            loadData();
-        } else {
-            alert("저장 실패: 테이블 구조를 확인해주세요.");
+        if (newItems.length > 0) {
+            dataStorage.all = [...dataStorage.all, ...newItems];
+            saveAndRender();
+            closeModal();
         }
     }
 
-    function renderTable(data) {
-        if (!data || data.length === 0) return;
-        const headers = Object.keys(data[0]).filter(k => k !== 'id' && k !== 'created_at');
-        
-        // 헤더 생성
-        document.getElementById('tableHeader').innerHTML = headers.map(h => `<th>${h}</th>`).join('');
-        
-        // 본문 생성
-        const body = data.map(row => `<tr>${headers.map(h => `<td>${row[h] || ''}</td>`).join('')}</tr>`).join('');
-        document.getElementById('tableBody').innerHTML = body;
+    function saveAndRender() {
+        localStorage.setItem('productionData', JSON.stringify(dataStorage));
+        render();
     }
 
-    loadData();
+    function moveSelected(targetKey) {
+        const checkboxes = document.querySelectorAll('.row-check:checked');
+        if (checkboxes.length === 0) return alert('항목을 선택해주세요.');
+        const indices = Array.from(checkboxes).map(cb => parseInt(cb.value)).sort((a, b) => b - a);
+        indices.forEach(idx => {
+            const item = dataStorage[currentTab][idx];
+            dataStorage[targetKey].push(item);
+            dataStorage[currentTab].splice(idx, 1);
+        });
+        saveAndRender();
+    }
+
+    function deleteSelected() {
+        const checkboxes = document.querySelectorAll('.row-check:checked');
+        if (checkboxes.length === 0) return alert('항목을 선택해주세요.');
+        if(confirm('선택 항목을 삭제하시겠습니까?')) {
+            const indices = Array.from(checkboxes).map(cb => parseInt(cb.value)).sort((a, b) => b - a);
+            indices.forEach(idx => dataStorage[currentTab].splice(idx, 1));
+            saveAndRender();
+        }
+    }
+
+    function clearAllData() {
+        if(confirm('모든 데이터를 초기화하시겠습니까?')) {
+            dataStorage = { all: [], done: [], fail: [], wait: [] };
+            saveAndRender();
+        }
+    }
+
+    function changeTab(tabKey) {
+        currentTab = tabKey;
+        document.querySelectorAll('.tab-item').forEach(el => el.classList.remove('active'));
+        document.getElementById('tab-' + tabKey).classList.add('active');
+        render();
+    }
+
+    function renderButtons() {
+        const btnRow = document.getElementById('actionButtons');
+        let html = '';
+        if (currentTab !== 'all') html += `<button class="btn-return" onclick="moveSelected('all')">↩ 공정 진행 리턴</button>`;
+        if (currentTab !== 'done') html += `<button class="btn-done" onclick="moveSelected('done')">생산완료 이동</button>`;
+        if (currentTab !== 'fail') html += `<button class="btn-fail" onclick="moveSelected('fail')">완료불가 이동</button>`;
+        if (currentTab !== 'wait') html += `<button class="btn-wait" onclick="moveSelected('wait')">진행대기 이동</button>`;
+        html += `<div class="spacer"></div><button class="btn-sel-del" onclick="deleteSelected()">선택 삭제</button><button class="btn-clear" onclick="clearAllData()">전체 초기화</button>`;
+        btnRow.innerHTML = html;
+    }
+
+    function render() {
+        renderButtons();
+        const theader = document.getElementById('theader');
+        const tbody = document.getElementById('tbody');
+        const list = dataStorage[currentTab];
+
+        document.getElementById('cnt-all').innerText = dataStorage.all.length;
+        document.getElementById('cnt-done').innerText = dataStorage.done.length;
+        document.getElementById('cnt-fail').innerText = dataStorage.fail.length;
+        document.getElementById('cnt-wait').innerText = dataStorage.wait.length;
+
+        theader.innerHTML = `<tr><th><input type="checkbox" onclick="document.querySelectorAll('.row-check').forEach(c=>c.checked=this.checked)"></th>${fixedHeaders.map(h => `<th>${h}</th>`).join('')}</tr>`;
+
+        tbody.innerHTML = list.length === 0 ? `<tr><td colspan="17" style="padding:30px;">데이터가 없습니다.</td></tr>` : 
+            list.map((item, idx) => `
+                <tr>
+                    <td><input type="checkbox" class="row-check" value="${idx}"></td>
+                    ${fixedHeaders.map(h => `<td class="${h==='품명'?'col-product':''}" title="${item[h]}">${item[h]}</td>`).join('')}
+                </tr>
+            `).join('');
+    }
 </script>
+
 </body>
 </html>
